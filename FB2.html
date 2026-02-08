@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Football Playbook Simulator - Ultimate Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            background-color: #1a202c; margin: 0; display: flex; flex-direction: column; 
+            height: 100vh; overflow: hidden; touch-action: none; font-family: sans-serif;
+            -webkit-user-select: none;
+        }
+        #canvasWrapper { position: relative; flex: 1; background-color: #1a3a1a; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+        canvas { display: block; touch-action: none; cursor: grab; }
+        canvas:active { cursor: grabbing; }
+        
+        #yardMarkers { position: absolute; left: 0; top: 0; bottom: 0; width: 60px; pointer-events: none; z-index: 40; background: rgba(0,0,0,0.5); border-right: 1px solid rgba(255,255,255,0.1); }
+        .yard-label { position: absolute; left: 10px; color: rgba(255,255,255,0.8); font-size: 10px; font-family: monospace; transform: translateY(-50%); }
+        
+        /* Sidebar & Hide Logic */
+        #sidePanel { 
+            position: absolute; left: 75px; top: 20px; width: 200px; 
+            background: rgba(31, 41, 55, 0.9); backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; color: white; z-index: 100;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
+        }
+        #sidePanel.hidden-panel { transform: translateX(-220px); opacity: 0; pointer-events: none; }
+        
+        #togglePanelBtn {
+            position: absolute; left: 75px; top: 20px; width: 40px; height: 40px;
+            background: rgba(31, 41, 55, 0.9); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px; color: white; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; z-index: 101; transition: 0.3s; opacity: 0; pointer-events: none;
+        }
+
+        .input-group { margin-bottom: 10px; }
+        .input-group label { display: block; font-size: 10px; color: #9ca3af; margin-bottom: 2px; }
+        .input-group input[type="number"] { width: 100%; background: #111827; border: 1px solid #374151; border-radius: 4px; padding: 6px; color: #fff; font-size: 14px; }
+        
+        .apply-btn { width: 100%; background: #f59e0b; color: #000; font-weight: bold; padding: 10px; border-radius: 6px; cursor: pointer; font-size: 13px; margin-bottom: 12px; }
+        
+        .feature-block { border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 10px; }
+        .feature-title { font-size: 10px; font-weight: bold; color: #fbbf24; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+        
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 4px 0; }
+        .checkbox-box { width: 16px; height: 16px; border: 2px solid #f59e0b; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .checkbox-box.checked { background: #f59e0b; }
+        .checkbox-box.checked::after { content: '✓'; color: #000; font-size: 10px; font-weight: bold; }
+
+        .slider-group { margin-top: 8px; }
+        .slider-label { display: flex; justify-content: space-between; font-size: 10px; color: #9ca3af; margin-bottom: 4px; }
+        input[type="range"] { width: 100%; accent-color: #f59e0b; cursor: pointer; height: 4px; }
+        .disabled-slider { opacity: 0.3; pointer-events: none; }
+
+        #bottomControls { 
+            height: 80px; background: #111827; border-top: 1px solid #374151; 
+            display: flex; justify-content: center; align-items: center; gap: 12px; 
+            z-index: 50; padding-bottom: env(safe-area-inset-bottom);
+        }
+        .control-btn { padding: 10px 20px; border-radius: 8px; font-weight: 600; color: white; font-size: 14px; }
+        .btn-sim { background: #2563eb; }
+        .btn-reset { background: #4b5563; }
+        
+        #playerMenu { 
+            position: absolute; display: none; background: white; border-radius: 10px; 
+            padding: 4px 0; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; 
+            flex-direction: column; min-width: 150px; 
+        }
+        #playerMenu button { padding: 12px 16px; border: none; background: none; font-size: 14px; color: #1f2937; text-align: left; border-bottom: 1px solid #f3f4f6; }
+        
+        .status-badge { position: absolute; right: 20px; top: 20px; color: #fff; font-size: 11px; background: rgba(0,0,0,0.4); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); pointer-events: none; }
+
+        /* Mode Switch Button */
+        #modeSwitch {
+            position: absolute; right: 20px; bottom: 100px; 
+            width: 50px; height: 50px; border-radius: 50%;
+            background: #10b981; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; z-index: 60; transition: transform 0.2s;
+            border: 2px solid white;
+        }
+        #modeSwitch:active { transform: scale(0.95); }
+        #modeSwitch.mode-flag { background: #8b5cf6; } /* Purple for Flag */
+    </style>
+</head>
+<body>
+    <div id="canvasWrapper">
+        <div id="yardMarkers"></div>
+        <div class="status-badge" id="statusInfo">Zoom: Scroll/Pinch | Pass: Drag QB</div>
+        
+        <!-- Toggle Panel Button -->
+        <div id="togglePanelBtn" onclick="toggleMenu()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </div>
+
+        <div id="sidePanel">
+            <div class="flex justify-between items-center mb-3">
+                <div class="font-bold text-xs text-orange-400" id="panelTitle">Settings (Tackle)</div>
+                <div class="cursor-pointer text-gray-400 hover:text-white" onclick="toggleMenu()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                </div>
+            </div>
+            
+            <div class="input-group"><label>Ball On (Yards)</label><input type="number" id="losInput" value="20"></div>
+            <!-- Added ID to control visibility -->
+            <div class="input-group" id="distInputGroup"><label>1st Down Dist</label><input type="number" id="distInput" value="10"></div>
+            <button class="apply-btn" onclick="applySettings()">Update Field</button>
+            
+            <div class="feature-block">
+                <div class="toggle-row" onclick="toggleFollow()">
+                    <span class="text-[10px] font-bold">Cam Follow</span>
+                    <div id="followCheckbox" class="checkbox-box"></div>
+                </div>
+            </div>
+
+            <div class="feature-block">
+                <div class="feature-title">Speed Config</div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Pass Speed</span><span id="passSpeedVal">0</span></div>
+                    <input type="range" id="passSpeedSlider" min="-5" max="5" value="0" step="1" oninput="updateGlobalSpeeds()">
+                </div>
+                <div id="playerSpeedContainer" class="slider-group disabled-slider">
+                    <div class="slider-label"><span>Player Speed (<span id="activePlayerName">None</span>)</span><span id="playerSpeedVal">0</span></div>
+                    <input type="range" id="playerSpeedSlider" min="-5" max="5" value="0" step="1" oninput="updatePlayerIndividualSpeed()">
+                </div>
+            </div>
+        </div>
+
+        <!-- Mode Switch Button -->
+        <div id="modeSwitch" onclick="switchMode()" title="Switch Mode">
+            <span class="text-white font-bold text-xs text-center leading-tight" id="modeText">11v11<br>Tackle</span>
+        </div>
+
+        <canvas id="fieldCanvas"></canvas>
+        
+        <div id="playerMenu">
+            <div class="px-4 py-2 text-[10px] font-bold text-gray-400 border-b" id="menuTarget">PLAYER</div>
+            <button onclick="handleMenuAction('custom')">Draw Route</button>
+            <button onclick="handleMenuAction('clear')">Clear Route</button>
+        </div>
+    </div>
+
+    <div id="bottomControls">
+        <button onclick="globalAction('simulate')" class="control-btn btn-sim">▶ Simulate</button>
+        <button onclick="globalAction('reset')" class="control-btn btn-reset">↺ Reset</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('fieldCanvas');
+        const ctx = canvas.getContext('2d');
+        const menu = document.getElementById('playerMenu');
+        const markersContainer = document.getElementById('yardMarkers');
+        const sidePanel = document.getElementById('sidePanel');
+        const toggleBtn = document.getElementById('togglePanelBtn');
+        const modeSwitchBtn = document.getElementById('modeSwitch');
+        const modeText = document.getElementById('modeText');
+        
+        // Mode Definitions
+        const MODES = {
+            TACKLE: {
+                id: 'tackle',
+                name: 'Tackle',
+                width: 53.3, // Yards
+                height: 120, // 100 + 20
+                playField: 100,
+                endzone: 10,
+                markerStep: 5,
+                colorOff: '#ef4444',
+                colorDef: '#1e40af',
+                playersOff: 11,
+                playersDef: 11
+            },
+            FLAG: {
+                id: 'flag',
+                name: 'Flag',
+                width: 25, // Yards
+                height: 70, // 50 + 20
+                playField: 50,
+                endzone: 10,
+                markerStep: 5,
+                colorOff: '#ef4444', // Red
+                colorDef: '#8b5cf6', // Purple for Flag Defense
+                playersOff: 5,
+                playersDef: 5
+            }
+        };
+
+        let currentMode = MODES.TACKLE;
+
+        const PLAYER_SIZE_RATIO = 0.85; 
+        const DEFAULT_SPEED_MOVE = 0.12;        
+        const DEFAULT_SPEED_BALL = 0.45;        
+        const DEFAULT_SPEED_PASS = 0.75;        
+        
+        let view = { 
+            x: 0, y: 0, zoom: 0.9, 
+            isDragging: false, isDraggingEntity: false, 
+            selectedEntity: null, isDrawingRoute: false, 
+            preReadyToDraw: false, activeWR: null, 
+            mouseDownTime: 0, lastPinchDist: 0,
+            isAimingPass: false, passTarget: null,
+            lastMouseX: 0, lastMouseY: 0,
+            followEnabled: false,
+            isAutoFollowing: false,
+            menuVisible: true
+        };
+        
+        let players = [], football = { x: 0, y: 100, state: 'free', carrier: null }; 
+        let currentLOS = 20, currentFirstDown = 30, savedState = null;
+        let animationIds = new Map();
+        let globalPassSpeedMod = 1.0; 
+
+        // Switch Mode Logic
+        function switchMode() {
+            if (currentMode.id === 'tackle') {
+                currentMode = MODES.FLAG;
+                modeSwitchBtn.classList.add('mode-flag');
+                modeSwitchBtn.style.background = '#8b5cf6';
+                modeText.innerHTML = '5v5<br>Flag';
+                document.getElementById('panelTitle').innerText = 'Settings (Flag)';
+                // Flag Default Settings
+                document.getElementById('losInput').value = 5; // Start at own 5
+                // Hide First Down Distance Input
+                document.getElementById('distInputGroup').style.display = 'none';
+            } else {
+                currentMode = MODES.TACKLE;
+                modeSwitchBtn.classList.remove('mode-flag');
+                modeSwitchBtn.style.background = '#10b981';
+                modeText.innerHTML = '11v11<br>Tackle';
+                document.getElementById('panelTitle').innerText = 'Settings (Tackle)';
+                // Tackle Default Settings
+                document.getElementById('losInput').value = 20;
+                document.getElementById('distInput').value = 10;
+                // Show First Down Distance Input
+                document.getElementById('distInputGroup').style.display = 'block';
+            }
+            applySettings();
+        }
+
+        function toggleMenu() {
+            view.menuVisible = !view.menuVisible;
+            if (view.menuVisible) {
+                sidePanel.classList.remove('hidden-panel');
+                toggleBtn.style.opacity = "0"; toggleBtn.style.pointerEvents = "none";
+            } else {
+                sidePanel.classList.add('hidden-panel');
+                toggleBtn.style.opacity = "1"; toggleBtn.style.pointerEvents = "auto";
+            }
+        }
+
+        function toggleFollow() {
+            view.followEnabled = !view.followEnabled;
+            const cb = document.getElementById('followCheckbox');
+            if(view.followEnabled) cb.classList.add('checked');
+            else { cb.classList.remove('checked'); view.isAutoFollowing = false; }
+        }
+
+        function updateGlobalSpeeds() {
+            const val = parseInt(document.getElementById('passSpeedSlider').value);
+            document.getElementById('passSpeedVal').innerText = (val > 0 ? "+" : "") + val;
+            globalPassSpeedMod = 1 + (val * 0.15);
+        }
+
+        function updatePlayerIndividualSpeed() {
+            if (!view.activeWR) return;
+            const val = parseInt(document.getElementById('playerSpeedSlider').value);
+            document.getElementById('playerSpeedVal').innerText = (val > 0 ? "+" : "") + val;
+            view.activeWR.speedMod = 1 + (val * 0.15);
+        }
+
+        // Initialize/Update Player Positions
+        function updatePositionsByLOS(losVal, dist = 10) {
+            let physLOS, physFirstDown;
+            const yardSizeUnit = 1;
+
+            if (currentMode.id === 'tackle') {
+                const fieldCenter = currentMode.playField / 2; // T: 50, F: 25
+                physLOS = losVal - fieldCenter;
+                
+                if (currentMode.id === 'flag') {
+                    physFirstDown = 0; // Fixed Midfield
+                } else {
+                    physFirstDown = physLOS + dist;
+                }
+
+            } else {
+                // FLAG Mode
+                const fieldCenter = currentMode.playField / 2; // 25
+                physLOS = losVal - fieldCenter;
+                physFirstDown = 0; // Fixed Midfield as First Down
+            }
+            
+            currentLOS = physLOS;
+            currentFirstDown = physFirstDown;
+
+            const offBaseY = currentLOS - 1.5; 
+            
+            generatePlayers(offBaseY);
+            
+            const center = players.find(p => p.pos === 'C');
+            football.x = center.x; football.y = center.y; football.state = 'free'; football.carrier = null;
+            saveCurrentPositions();
+        }
+
+        function generatePlayers(baseY) {
+            players = [];
+            const isFlag = currentMode.id === 'flag';
+            const offColor = currentMode.colorOff;
+            const defColor = currentMode.colorDef;
+
+            // Offense Y offset (Back)
+            const offY = baseY - 0.5;
+            // Defense Y offset (Forward)
+            const defY = baseY + 1.5;
+
+            if (isFlag) {
+                // 5v5 Flag Offense
+                const offP = [
+                    {p:'C', x:0, y:0},
+                    {p:'QB', x:0, y:-3}, // Shotgun
+                    {p:'WR1', x:-10, y:0},
+                    {p:'WR2', x:10, y:0},
+                    {p:'WR3', x:5, y:-1} // Slot
+                ];
+                // 5v5 Flag Defense (7 yard rule, FS deep)
+                const defP = [
+                    {p:'LB1', x:-3, y:7}, // 7 yards off
+                    {p:'LB2', x:3, y:7},
+                    {p:'CB1', x:-10, y:5},
+                    {p:'CB2', x:10, y:5},
+                    {p:'FS', x:0, y:12}
+                ];
+
+                players.push(...offP.map(p => ({
+                    team: 'offense', id: 'o'+Math.random(), pos: p.p, 
+                    x: p.x, y: offY + p.y, route: [], routeColor: offColor, isSimulating: false, speedMod: 1.0
+                })));
+                players.push(...defP.map(p => ({
+                    team: 'defense', id: 'd'+Math.random(), pos: p.p, 
+                    x: p.x, y: defY + p.y, route: [], isSimulating: false, speedMod: 1.0
+                })));
+
+            } else {
+                // 11v11 Tackle Offense
+                const offP = [
+                    {p:'C',x:0,y:0},{p:'LG',x:-3,y:0},{p:'RG',x:3,y:0},{p:'LT',x:-6,y:0},{p:'RT',x:6,y:0},
+                    {p:'QB',x:0,y:-2},{p:'RB',x:0,y:-5},
+                    {p:'WR1',x:-20,y:0},{p:'WR2',x:20,y:0},{p:'TE',x:9,y:0},{p:'WR3',x:-12,y:-1}
+                ];
+                // 11v11 Tackle Defense
+                const defP = [
+                    {p:'DT',x:-1.5,y:1},{p:'DT',x:1.5,y:1},{p:'DE',x:-5,y:1},{p:'DE',x:5,y:1},
+                    {p:'MLB',x:0,y:4},{p:'OLB',x:-6,y:4},{p:'OLB',x:6,y:4},
+                    {p:'CB1',x:-20,y:5},{p:'CB2',x:20,y:5},{p:'FS',x:0,y:12},{p:'SS',x:8,y:8}
+                ];
+
+                players.push(...offP.map(p => ({
+                    team: 'offense', id: 'o'+Math.random(), pos: p.p, 
+                    x: p.x, y: offY + p.y, route: [], routeColor: offColor, isSimulating: false, speedMod: 1.0
+                })));
+                players.push(...defP.map(p => ({
+                    team: 'defense', id: 'd'+Math.random(), pos: p.p, 
+                    x: p.x, y: defY + p.y, route: [], isSimulating: false, speedMod: 1.0
+                })));
+            }
+        }
+
+        function applySettings() {
+            const lv = parseInt(document.getElementById('losInput').value);
+            const dv = parseInt(document.getElementById('distInput').value);
+            updatePositionsByLOS(lv, dv); 
+            resetViewToBest();
+            drawField();
+        }
+
+        function resetViewToBest() {
+            if (players.length === 0) return;
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            players.forEach(p => {
+                minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+            });
+            const yardSize = (canvas.height * 0.85) / currentMode.height;
+            const spreadX = (maxX - minX) + 6, spreadY = (maxY - minY) + 6;
+            
+            view.zoom = Math.min(canvas.width * 0.95 / (spreadX * yardSize), canvas.height * 0.95 / (spreadY * yardSize), 2.5);
+            view.x = -((minX + maxX) / 2) * yardSize * view.zoom;
+            view.y = -((minY + maxY) / 2) * yardSize * view.zoom;
+            view.isAutoFollowing = false;
+        }
+
+        function saveCurrentPositions() { 
+            savedState = { 
+                players: players.map(p=>({id:p.id,x:p.x,y:p.y,route:[...p.route], speedMod: p.speedMod})), 
+                football:{...football}, los:currentLOS, firstDown:currentFirstDown 
+            }; 
+        }
+
+        function updateViewFollow() {
+            if (!view.followEnabled) return;
+            let isFlying = football.state === 'flying';
+            let isAdvancing = (football.state === 'held' && football.carrier && football.carrier.pos !== 'QB' && football.carrier.isSimulating);
+
+            if (isFlying || isAdvancing) {
+                view.isAutoFollowing = true;
+                const yardSize = (canvas.height*0.85)/currentMode.height;
+                const targetX = -football.x * yardSize * view.zoom;
+                const targetY = -football.y * yardSize * view.zoom;
+                view.x += (targetX - view.x) * 0.1;
+                view.y += (targetY - view.y) * 0.1;
+            } else {
+                view.isAutoFollowing = false;
+            }
+        }
+
+        function drawField() {
+            updateViewFollow();
+            ctx.clearRect(0,0,canvas.width,canvas.height); ctx.save();
+            ctx.translate(canvas.width/2+view.x, canvas.height/2+view.y); ctx.scale(view.zoom, view.zoom);
+            
+            const totalH = currentMode.height;
+            const width = currentMode.width;
+            
+            const yardSize = (canvas.height * 0.85) / totalH;
+            const fieldWPixel = width * yardSize; 
+            const fieldHPixel = totalH * yardSize;
+            
+            const offX = -fieldWPixel/2;
+            const topY = -fieldHPixel/2; 
+            
+            // 1. Grass
+            ctx.fillStyle = '#1e3a1e'; 
+            ctx.fillRect(offX - 100, topY - 50, fieldWPixel + 200, fieldHPixel + 100);
+            
+            // 2. Play Field
+            ctx.fillStyle = '#264d26'; 
+            ctx.fillRect(offX, topY + currentMode.endzone * yardSize, fieldWPixel, currentMode.playField * yardSize);
+            
+            // 3. Endzones
+            ctx.fillStyle = 'rgba(30,64,175,0.4)'; 
+            ctx.fillRect(offX, topY, fieldWPixel, currentMode.endzone * yardSize);
+            ctx.fillStyle = 'rgba(153,27,27,0.4)'; 
+            ctx.fillRect(offX, topY + (currentMode.endzone + currentMode.playField) * yardSize, fieldWPixel, currentMode.endzone * yardSize);
+            
+            // 4. Grid Lines
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
+            const step = currentMode.markerStep;
+            
+            for(let y = 0; y <= totalH; y += step) {
+                const py = topY + y * yardSize;
+                ctx.beginPath(); ctx.moveTo(offX, py); ctx.lineTo(offX + fieldWPixel, py); ctx.stroke();
+            }
+            
+            // 5. Flag Midfield Line
+            if (currentMode.id === 'flag') {
+                const midY = topY + (currentMode.endzone + currentMode.playField/2) * yardSize;
+                ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 3; 
+                ctx.beginPath(); ctx.moveTo(offX, midY); ctx.lineTo(offX + fieldWPixel, midY); ctx.stroke();
+            }
+
+            // 6. LOS Line
+            const losDrawY = currentLOS * yardSize; 
+            ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; 
+            ctx.beginPath(); ctx.moveTo(offX, losDrawY); ctx.lineTo(offX + fieldWPixel, losDrawY); ctx.stroke();
+            
+            // 7. First Down Line
+            if (currentMode.id === 'tackle') {
+                const fdDrawY = currentFirstDown * yardSize;
+                ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.setLineDash([8,6]); 
+                ctx.beginPath(); ctx.moveTo(offX, fdDrawY); ctx.lineTo(offX + fieldWPixel, fdDrawY); ctx.stroke(); ctx.setLineDash([]);
+            }
+
+            // 8. Routes
+            players.forEach(p => {
+                if(p.route.length > 1) {
+                    ctx.beginPath(); ctx.strokeStyle = p.routeColor || 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([5,5]);
+                    ctx.moveTo(p.route[0].x*yardSize, p.route[0].y*yardSize);
+                    p.route.forEach(pt => ctx.lineTo(pt.x*yardSize, pt.y*yardSize)); ctx.stroke(); ctx.setLineDash([]);
+
+                    // X Marker
+                    const last = p.route[p.route.length - 1];
+                    const lx = last.x * yardSize, ly = last.y * yardSize;
+                    const xSize = yardSize * 0.5;
+                    ctx.beginPath(); ctx.strokeStyle = p.routeColor || '#fff'; ctx.lineWidth = 2.5;
+                    ctx.moveTo(lx - xSize, ly - xSize); ctx.lineTo(lx + xSize, ly + xSize);
+                    ctx.moveTo(lx + xSize, ly - xSize); ctx.lineTo(lx - xSize, ly + xSize);
+                    ctx.stroke();
+                }
+            });
+
+            // Pass Aiming Line
+            if (view.isAimingPass && football.carrier && view.passTarget) {
+                const qbx = football.carrier.x * yardSize, qby = football.carrier.y * yardSize;
+                const tx = view.passTarget.x * yardSize, ty = view.passTarget.y * yardSize;
+                ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.setLineDash([10,10]);
+                ctx.moveTo(qbx, qby); ctx.lineTo(tx, ty); ctx.stroke(); ctx.setLineDash([]);
+                ctx.beginPath(); ctx.setLineDash([3,3]); ctx.strokeStyle = '#facc15';
+                ctx.arc(tx, ty, yardSize * 1.5, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+            }
+
+            // Players
+            players.forEach(p => {
+                const px = p.x*yardSize, py = p.y*yardSize, r = yardSize * PLAYER_SIZE_RATIO;
+                ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI*2);
+                ctx.fillStyle = p.team === 'offense' ? (view.activeWR === p ? '#fb7185' : currentMode.colorOff) : currentMode.colorDef; ctx.fill();
+                ctx.strokeStyle = (view.activeWR === p || football.carrier === p) ? '#fff' : 'rgba(255,255,255,0.4)'; 
+                ctx.lineWidth = football.carrier === p ? 3 : 1.5; ctx.stroke();
+                ctx.fillStyle = '#fff'; ctx.font = `bold ${yardSize*0.65}px monospace`; ctx.textAlign='center'; ctx.fillText(p.pos, px, py+yardSize*0.25);
+            });
+
+            // Football
+            const bx = football.x*yardSize, by = football.y*yardSize;
+            ctx.save(); ctx.translate(bx, by); ctx.rotate(Math.PI/4);
+            ctx.fillStyle='#5c3317'; ctx.beginPath(); ctx.ellipse(0, 0, yardSize*0.6, yardSize*0.4, 0, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(-yardSize*0.2, 0); ctx.lineTo(yardSize*0.2, 0); ctx.stroke();
+            ctx.restore();
+
+            ctx.restore(); updateYardMarkers();
+        }
+
+        function getWorldPos(x, y) {
+            const yardSize = (canvas.height * 0.85) / currentMode.height;
+            return { x: (x-canvas.width/2-view.x)/view.zoom/yardSize, y: (y-canvas.height/2-view.y)/view.zoom/yardSize };
+        }
+
+        // Override position update logic
+        updatePositionsByLOS = function(losVal, dist = 10) {
+            const bottomLine = currentMode.playField / 2;
+            const physLOS = bottomLine - losVal;
+            
+            let physFirstDown;
+            if (currentMode.id === 'flag') {
+                physFirstDown = 0; // Midfield
+            } else {
+                physFirstDown = physLOS - dist; // Upwards (Y decrease)
+            }
+
+            currentLOS = physLOS;
+            currentFirstDown = physFirstDown;
+
+            generatePlayers(currentLOS);
+
+            const center = players.find(p => p.pos === 'C');
+            if(center) {
+                football.x = center.x; football.y = center.y; 
+                football.state = 'free'; football.carrier = null;
+            }
+            saveCurrentPositions();
+        }
+
+        generatePlayers = function(baseY) {
+            players = [];
+            const isFlag = currentMode.id === 'flag';
+            const offColor = currentMode.colorOff;
+            
+            const offY = baseY + 0.5; 
+            const defY = baseY - 1.5; 
+
+            if (isFlag) {
+                const offP = [
+                    {p:'C', x:0, y:0},
+                    {p:'QB', x:0, y:3}, 
+                    {p:'WR1', x:-10, y:1},
+                    {p:'WR2', x:10, y:1},
+                    {p:'WR3', x:5, y:2}
+                ];
+                const defP = [
+                    {p:'LB1', x:-4, y:-7},
+                    {p:'LB2', x:4, y:-7},
+                    {p:'CB1', x:-10, y:-5},
+                    {p:'CB2', x:10, y:-5},
+                    {p:'FS', x:0, y:-15}
+                ];
+                players.push(...offP.map(p => ({team:'offense', id:'o'+Math.random(), pos:p.p, x:p.x, y:offY+p.y, route:[], routeColor:offColor, isSimulating:false, speedMod:1.0})));
+                players.push(...defP.map(p => ({team:'defense', id:'d'+Math.random(), pos:p.p, x:p.x, y:defY+p.y, route:[], isSimulating:false, speedMod:1.0})));
+
+            } else {
+                const offP = [
+                    {p:'C',x:0,y:0},{p:'LG',x:-3,y:0},{p:'RG',x:3,y:0},{p:'LT',x:-6,y:0},{p:'RT',x:6,y:0},
+                    {p:'QB',x:0,y:4},{p:'RB',x:0,y:7},
+                    {p:'WR1',x:-20,y:1},{p:'WR2',x:20,y:1},{p:'TE',x:9,y:0},{p:'WR3',x:-12,y:2}
+                ];
+                const defP = [
+                    {p:'DT',x:-1.5,y:-1},{p:'DT',x:1.5,y:-1},{p:'DE',x:-5,y:-1},{p:'DE',x:5,y:-1},
+                    {p:'MLB',x:0,y:-5},{p:'OLB',x:-6,y:-5},{p:'OLB',x:6,y:-5},
+                    {p:'CB1',x:-20,y:-4},{p:'CB2',x:20,y:-4},{p:'FS',x:-5,y:-15},{p:'SS',x:5,y:-12}
+                ];
+                players.push(...offP.map(p => ({team:'offense', id:'o'+Math.random(), pos:p.p, x:p.x, y:offY+p.y, route:[], routeColor:offColor, isSimulating:false, speedMod:1.0})));
+                players.push(...defP.map(p => ({team:'defense', id:'d'+Math.random(), pos:p.p, x:p.x, y:defY+p.y, route:[], isSimulating:false, speedMod:1.0})));
+            }
+        }
+
+        function updatePlayerPanel() {
+            const container = document.getElementById('playerSpeedContainer');
+            const nameLabel = document.getElementById('activePlayerName');
+            const slider = document.getElementById('playerSpeedSlider');
+            const valLabel = document.getElementById('playerSpeedVal');
+            if (view.activeWR) {
+                container.classList.remove('disabled-slider');
+                nameLabel.innerText = view.activeWR.pos;
+                const sliderVal = Math.round((view.activeWR.speedMod - 1) / 0.15);
+                slider.value = sliderVal;
+                valLabel.innerText = (sliderVal > 0 ? "+" : "") + sliderVal;
+            } else {
+                container.classList.add('disabled-slider');
+                nameLabel.innerText = "None"; slider.value = 0; valLabel.innerText = "0";
+            }
+        }
+
+        function handleDown(x, y) {
+            const w = getWorldPos(x, y); view.mouseDownTime = Date.now();
+            view.lastMouseX = x; view.lastMouseY = y;
+            if(view.preReadyToDraw && view.activeWR) { 
+                view.isDrawingRoute=true; view.preReadyToDraw=false; 
+                view.activeWR.route=[{x:view.activeWR.x, y:view.activeWR.y}]; 
+                return; 
+            }
+            const f = players.find(p=>Math.hypot(p.x-w.x, p.y-w.y)<2.5);
+            if(f) { 
+                view.selectedEntity = f; view.activeWR = f; updatePlayerPanel();
+                if (f.pos === 'QB' && football.carrier === f) {
+                    view.isAimingPass = true; view.passTarget = {x: w.x, y: w.y};
+                } else { view.isDraggingEntity = true; }
+                return; 
+            }
+            if(Math.hypot(football.x-w.x, football.y-w.y) < 2.5) { view.isDraggingEntity=true; view.selectedEntity=football; return; }
+            menu.style.display='none'; 
+            view.activeWR = null; updatePlayerPanel();
+            if (!view.isAutoFollowing) view.isDragging=true; 
+        }
+
+        function handleMove(x, y) {
+            const w = getWorldPos(x, y);
+            if(view.isDrawingRoute && view.activeWR) { 
+                const last = view.activeWR.route[view.activeWR.route.length-1];
+                if(Math.hypot(last.x-w.x, last.y-w.y) > 0.8) view.activeWR.route.push({x:w.x, y:w.y}); 
+                drawField(); 
+            }
+            else if (view.isAimingPass) { view.passTarget = {x: w.x, y: w.y}; drawField(); }
+            else if(view.isDraggingEntity && view.selectedEntity) { 
+                view.selectedEntity.x=w.x; view.selectedEntity.y=w.y; 
+                if (football.carrier === view.selectedEntity) { football.x = w.x; football.y = w.y; }
+                drawField(); 
+            }
+            else if(view.isDragging && !view.isAutoFollowing) { 
+                view.x += x-view.lastMouseX; view.y += y-view.lastMouseY; 
+                view.lastMouseX=x; view.lastMouseY=y; drawField(); 
+            }
+        }
+
+        function handleUp(e) {
+            const d = Date.now()-view.mouseDownTime;
+            if (view.isAimingPass && view.passTarget) { throwBall(view.passTarget); view.isAimingPass = false; view.passTarget = null; }
+            else if(view.selectedEntity && d < 200 && view.selectedEntity.id) {
+                document.getElementById('menuTarget').innerText=view.activeWR.pos;
+                menu.style.display='flex'; 
+                const tx = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
+                const ty = e.clientY || (e.changedTouches && e.changedTouches[0].clientY);
+                menu.style.left = Math.min(tx, window.innerWidth-160)+'px'; 
+                menu.style.top = Math.min(ty, window.innerHeight-140)+'px';
+            }
+            view.isDrawingRoute=false; view.isDragging=false; view.isDraggingEntity=false; view.selectedEntity=null; drawField();
+        }
+
+        function globalAction(type) {
+            if(type==='reset' && savedState) {
+                stopAllSimulations();
+                football.x=savedState.football.x; football.y=savedState.football.y; 
+                football.state = 'free'; football.carrier = null;
+                players.forEach(p=>{ 
+                    const s=savedState.players.find(x=>x.id===p.id); 
+                    if(s){p.x=s.x;p.y=s.y;p.route=[...s.route];p.isSimulating=false;p.speedMod=s.speedMod;} 
+                });
+                resetViewToBest(); drawField();
+            } else if(type==='simulate') { startSimulationRound(); }
+        }
+
+        function stopAllSimulations() {
+            animationIds.forEach(id => cancelAnimationFrame(id));
+            animationIds.clear();
+            players.forEach(p => p.isSimulating = false);
+        }
+
+        function startSimulationRound() {
+            stopAllSimulations();
+            players.forEach(p => {
+                p.isSimulating = false;
+                if (p.route.length > 1) {
+                    p.x = p.route[0].x; p.y = p.route[0].y;
+                    if (p.pos !== 'QB') simulatePlayer(p); 
+                }
+            });
+            const center = players.find(p => p.pos === 'C');
+            const qb = players.find(p => p.pos === 'QB');
+            football.x = center.x; football.y = center.y; football.state = 'snap'; football.carrier = null;
+            snapToQB(center, qb);
+        }
+
+        function snapToQB(center, qb) {
+            const animateSnap = () => {
+                const dx = qb.x - football.x, dy = qb.y - football.y, dist = Math.hypot(dx, dy);
+                const s = DEFAULT_SPEED_BALL * globalPassSpeedMod;
+                if (dist < s) {
+                    football.x = qb.x; football.y = qb.y; football.state = 'held'; football.carrier = qb;
+                    if (qb.route.length > 1) simulatePlayer(qb);
+                    drawField();
+                } else {
+                    football.x += (dx / dist) * s; football.y += (dy / dist) * s;
+                    drawField(); requestAnimationFrame(animateSnap);
+                }
+            };
+            requestAnimationFrame(animateSnap);
+        }
+
+        function throwBall(target) {
+            if (!football.carrier) return;
+            football.state = 'flying'; football.carrier = null;
+            const animateFlight = () => {
+                const dx = target.x - football.x, dy = target.y - football.y, dist = Math.hypot(dx, dy);
+                const s = DEFAULT_SPEED_PASS * globalPassSpeedMod;
+                if (dist < s) {
+                    football.x = target.x; football.y = target.y; football.state = 'free';
+                    checkCatch(target); drawField();
+                } else {
+                    football.x += (dx / dist) * s; football.y += (dy / dist) * s;
+                    drawField(); requestAnimationFrame(animateFlight);
+                }
+            };
+            requestAnimationFrame(animateFlight);
+        }
+
+        function checkCatch(target) {
+            const CATCH_RADIUS = 2.5;
+            let candidates = players.filter(p => Math.hypot(p.x - target.x, p.y - target.y) <= CATCH_RADIUS);
+            if (candidates.length > 0) {
+                candidates.sort((a, b) => Math.hypot(a.x - target.x, a.y - target.y) - Math.hypot(b.x - target.x, b.y - target.y));
+                football.state = 'held'; football.carrier = candidates[0];
+            }
+        }
+
+        function simulatePlayer(p) {
+            p.isSimulating = true; let currentPathIndex = 1; 
+            const animate = () => {
+                if(!p.isSimulating) return;
+                const target = p.route[currentPathIndex];
+                const dx = target.x - p.x, dy = target.y - p.y, dist = Math.hypot(dx, dy);
+                const s = DEFAULT_SPEED_MOVE * (p.speedMod || 1.0);
+                if (dist < s) {
+                    p.x = target.x; p.y = target.y; currentPathIndex++;
+                } else {
+                    p.x += (dx / dist) * s; p.y += (dy / dist) * s;
+                }
+                if (football.carrier === p) { football.x = p.x; football.y = p.y; }
+                drawField();
+                if (currentPathIndex < p.route.length) {
+                    const id = requestAnimationFrame(animate); animationIds.set(p.id, id);
+                } else { p.isSimulating = false; animationIds.delete(p.id); }
+            };
+            const id = requestAnimationFrame(animate); animationIds.set(p.id, id);
+        }
+
+        function handleMenuAction(a) { 
+            menu.style.display='none'; 
+            if(a==='custom') view.preReadyToDraw=true; 
+            else if(a==='clear' && view.activeWR) { view.activeWR.route=[]; drawField(); } 
+        }
+
+        function updateYardMarkers() {
+            markersContainer.innerHTML = ''; 
+            const yardSize = (canvas.height * 0.85) / currentMode.height;
+            const totalH = currentMode.height;
+            const step = currentMode.markerStep;
+            
+            for(let y = -totalH/2; y <= totalH/2; y += step) {
+                const sy = (y * view.zoom * yardSize) + (canvas.height/2) + view.y;
+                
+                if(sy >= 0 && sy <= canvas.height) {
+                    const l = document.createElement('div'); l.className='yard-label'; l.style.top=`${sy}px`;
+                    
+                    const distFromTop = y + totalH/2; 
+                    const distFromBot = totalH/2 - y; 
+                    
+                    let text = '';
+                    const ez = currentMode.endzone;
+                    const pf = currentMode.playField;
+                    
+                    if (Math.abs(distFromTop - ez) < 0.1 || Math.abs(distFromBot - ez) < 0.1) text = 'GOAL';
+                    else if (distFromTop < ez || distFromBot < ez) text = 'END';
+                    else {
+                        const mid = totalH/2;
+                        const distToMid = Math.abs(y); 
+                        const val = Math.round(currentMode.playField/2 - distToMid);
+                        if (val % 10 === 0 && val !== 0) text = val;
+                        else if (val === 0) text = '<>';
+                    }
+                    
+                    if (text) {
+                        l.innerText = text;
+                        markersContainer.appendChild(l);
+                    }
+                }
+            }
+        }
+
+        function init() { 
+            canvas.width=window.innerWidth; canvas.height=window.innerHeight - 80; 
+            applySettings(); 
+        }
+
+        // Listeners
+        canvas.addEventListener('touchstart', e => {
+            if(e.touches.length === 2) {
+                view.isDragging = false; view.isDraggingEntity = false; view.isAimingPass = false;
+                view.lastPinchDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+            } else if(e.touches.length === 1) { handleDown(e.touches[0].clientX, e.touches[0].clientY); }
+        }, {passive: false});
+
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault(); 
+            if(e.touches.length === 2) {
+                const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                view.zoom = Math.min(Math.max(view.zoom * (dist / view.lastPinchDist), 0.3), 3.5);
+                view.lastPinchDist = dist; drawField();
+            } else if(e.touches.length === 1) { handleMove(e.touches[0].clientX, e.touches[0].clientY); }
+        }, {passive: false});
+
+        canvas.addEventListener('touchend', handleUp);
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            view.zoom = Math.min(Math.max(view.zoom - e.deltaY * 0.0008, 0.3), 3.5);
+            drawField();
+        }, {passive: false});
+
+        canvas.addEventListener('mousedown', e => handleDown(e.clientX, e.clientY));
+        window.addEventListener('mousemove', e => { if(!('ontouchstart' in window)) handleMove(e.clientX, e.clientY); });
+        window.addEventListener('mouseup', handleUp);
+        window.addEventListener('resize', init);
+        
+        init();
+    </script>
+</body>
+</html>
